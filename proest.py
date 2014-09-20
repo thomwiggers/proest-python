@@ -12,6 +12,7 @@ Licence: BSD
 """
 from __future__ import print_function, unicode_literals
 
+import sys
 
 def rotate_left(bits, register, amount):
     """Rotate a bits-sized register by amount
@@ -22,7 +23,11 @@ def rotate_left(bits, register, amount):
     1
     """
     amount %= bits
-    strval = bin(register)[-bits]
+    binreg = bin(register)
+    if len(binreg) - 2 >= bits:
+        strval = binreg[-bits:]
+    else:
+        strval = binreg[2:]
     if len(strval) < bits:
         strval = '0'*(bits-len(strval)) + strval
     return int(strval[amount:] + strval[:amount], 2)
@@ -31,8 +36,9 @@ def rotate_left(bits, register, amount):
 def rotate_right(bits, register, amount):
     """Rotate a bits-sized register by amount
 
-    >>> rotate(8, 1, 1)
+    >>> rotate_right(8, 1, 1)
     128
+    >>> rotate_left(16, 0xb2c5, 1)
     """
     return rotate_left(bits, register, bits-amount)
 
@@ -41,7 +47,7 @@ class Proest(object):
 
     # Constants for AddConstants
     c1 = 0x7581
-    c2 = 0x2bc5
+    c2 = 0xb2c5
 
     # For shiftPlanes
     pi_1 = [0, 2, 4, 6]
@@ -57,16 +63,21 @@ class Proest(object):
     def _add_constant(self, round):
         for i in range(4):
             for j in range(0, 4, 2):
-                self.state[i][j] &= rotate_left(16, self.c1, round + i*4 + j)
-                self.state[i][j+1] &= rotate_left(16, self.c2, round + i*4 + j + 1)
+                self.state[i][j] ^= rotate_left(16, self.c1, round + i * 4 + j)
+                self.state[i][j+1] ^= rotate_left(
+                    16, self.c2, round + i*4 + j + 1)
 
     def _shift_planes(self, round):
         for i in range(4):
             for j in range(4):
                 if round % 2 == 0:
-                    self.state[i][j] = rotate_right(self.state[i][j], pi_1[i])
+                    self.state[i][j] = rotate_right(16,
+                                                    self.state[i][j],
+                                                    self.pi_1[i])
                 else:
-                    self.state[i][j] = rotate_right(self.state[i][j], p2_1[i])
+                    self.state[i][j] = rotate_right(16,
+                                                    self.state[i][j],
+                                                    self.pi_2[i])
 
     def _mix_slices(self):
         M = ['1000100100101011',
@@ -103,18 +114,56 @@ class Proest(object):
                 self.state[i][j] = newx[i*4+j]
 
     def _sub_rows(self):
-        pass
+        for i in range(4):
+            # We can do this for the whole register at once bitsliced
+            self.state[i] = self._sbox(self.state[i])
 
-    def _init(self, x, key):
-        self.state = [[],[],[],[]]
+    def _sbox(self, bits):
+        """Sbox via the formula"""
+        (p, q) = bits[0], bits[1]
+        bits[0] = bits[2] ^ (p & q)
+        bits[1] = bits[3] ^ (q & bits[2])
+        bits[2] = p ^ (bits[0] & bits[1])
+        bits[3] = q ^ (bits[1] & bits[2])
+        return bits
+
+    def _init(self, x):
+        self.state = [[0, 0, 0, 0],
+                      [0, 0, 0, 0],
+                      [0, 0, 0, 0],
+                      [0, 0, 0, 0]]
         for i in range(4):
             for j in range(4):
-                self.state[i][j] = 0
+                self.state[i][j] = (x >> ((i*4 + j)*16)) & 0xffff
 
-    def encrypt(self, x):
+    def write_state(self):
+        out = b''
+        for i in range(4):
+            for j in range(4):
+                out += self.state[i][j].to_bytes(2, byteorder='little')
+
+        return out
+
+    def permute(self, x):
         self._init(x)
         for i in range(self.rounds):
             self._sub_rows()
             self._mix_slices()
-            self._shift_planes()
+            self._shift_planes(i)
             self._add_constant(i)
+
+    def printstate(self):
+        for char in self.write_state():
+            print('%02x' % char, end='')
+        print()
+
+if __name__ == "__main__":
+    proest = Proest()
+    x, count = 0, 0
+    for arg in sys.argv[1:]:
+        for char in arg:
+            x |= (ord(char) << (count * 8))
+            count += 1
+    proest.permute(x)
+    print("Output: ", end='')
+    proest.printstate()

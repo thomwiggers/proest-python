@@ -1,11 +1,13 @@
 # -*- coding: utf8 -*-
 """Proest-python
 
-Simple implementation of Proest in python.
+Simple implementation of the Prøst permutation in python.
 
 This implementation does *not* make any claims regarding security!
 
 See http://competitions.cr.yp.to/round1/proestv1.pdf
+
+https://github.com/thomwiggers/proest-python
 
 Author: Thom Wiggers
 Licence: BSD
@@ -13,6 +15,7 @@ Licence: BSD
 from __future__ import print_function, unicode_literals
 
 import sys
+
 
 def rotate_left(bits, register, amount):
     """Rotate a bits-sized register by amount
